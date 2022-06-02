@@ -3,14 +3,109 @@
  * the underlying service to the FHIR ResearchStudy type.
  */
 
-import { ResearchStudy } from 'clinical-trial-matching-service';
+import { BasicHttpError, fhir, ResearchStudy } from 'clinical-trial-matching-service';
 import { QueryTrial } from './query';
+import { checkNullString, phaseDisplayMap } from "./constants";
+import { Address, Location } from 'clinical-trial-matching-service/dist/fhir-types';
 
-export function convertToResearchStudy(json: QueryTrial, id: number): ResearchStudy {
-  const result = new ResearchStudy(id);
-  // Add whatever fields can be added here, for example:
-  result.status = 'active';
-  return result;
+export function convertToResearchStudy(lungResponse: QueryTrial, id: number): ResearchStudy {
+  try {
+    // The clinical trial ID is required as it's used to look up the search study
+    const result = new ResearchStudy(lungResponse.id_info.org_study_id);
+    if (lungResponse.brief_title) {
+      result.title = lungResponse.brief_title;
+    }
+    result.identifier = [{ use: 'official', system: 'http://clinicaltrials.gov', value: lungResponse.id_info.nct_id }];
+
+    if (lungResponse.phase) {
+      result.phase = {
+        coding: [
+          {
+            system: 'http://terminology.hl7.org/CodeSystem/research-study-phase',
+            code: phaseDisplayMap.get(lungResponse.phase),
+            display: lungResponse.phase
+          }
+        ],
+        text: lungResponse.phase
+      };
+    }
+    // if (lungResponse.trialCategories && lungResponse.trialCategories.length > 0) {
+    //   result.keyword = convertArrayToCodeableConcept(lungResponse.trialCategories);
+    // }
+    if (lungResponse.keyword) {
+      result.keyword = [];
+      for (const key of lungResponse.keyword) {
+        result.keyword.push({ text: key });
+      }
+    }
+    if (lungResponse.overall_contact) {
+
+      result.addContact(checkNullString(lungResponse.overall_contact.last_name), checkNullString(lungResponse.overall_contact.phone), checkNullString(lungResponse.overall_contact.email));
+    }
+
+    if (lungResponse.detailed_description && lungResponse.detailed_description.textblock) {
+      // If there is a purpose and whoIsThisFor, use that, otherwise leave the
+      // description blank and allow the default CTs.gov service fill it in
+      result.description = lungResponse.detailed_description.textblock;
+    }
+    // if (lungResponse.purpose) {
+    //   result.objective = [{ name: lungResponse.purpose }];
+    // }
+    if (lungResponse.arm_group) {
+      result.arm = [];
+      for (const a of lungResponse.arm_group) {
+        const codeable: fhir.CodeableConcept = {};
+        codeable.text = checkNullString(a.arm_group_type);
+        result.arm.push({ type: codeable, name: checkNullString(a.arm_group_label), description: checkNullString(a.description) });
+      }
+    }
+    if (lungResponse.sponsors) {
+      result.sponsor = result.addContainedResource({ resourceType: 'Organization', id: 'org' + result.id, name: checkNullString(lungResponse.sponsors.agency) });
+    }
+
+    if (lungResponse.location_countries && lungResponse.location_countries.country) {
+      result.location = [];
+      for (const c of lungResponse.location_countries.country) {
+        result.location.push({ text: c });
+      }
+    }
+    if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].investigator) {
+      for (const pi of lungResponse.location[0].investigator) {
+        if (pi.role == "Principal Investigator") {
+          result.principalInvestigator = result.addContainedResource({ resourceType: pi.role, id: 'pi' + result.id, name: checkNullString(pi.last_name) });
+        }
+      }
+    }
+
+    if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].facility) {
+      const facility = lungResponse.location[0].facility;
+      var s = <Location>{};
+      s.id = 'loc' + result.id;
+      s.name = checkNullString(facility.name);
+      if (facility.address) {
+        s.address = <Address>{};
+        s.address.use = 'work';
+        s.address.type = 'both';
+        //    s.address.text?: string;
+        //   s.address.line?: string[];
+        s.address.city = checkNullString(facility.address.city);
+        //      s.address.district?: string;
+        s.address.state = checkNullString(facility.address.state);
+        s.address.postalCode = checkNullString(facility.address.zip);
+        s.address.country = checkNullString(facility.address.country);
+        if (facility.geodata && facility.geodata.latitude && facility.geodata.longitude) {
+          s.position = { latitude: facility.geodata.latitude, longitude: facility.geodata.longitude };
+        }
+
+      }
+      result.addSite(s)
+    }
+    return result;
+  } catch (error) {
+    throw new BasicHttpError(
+      "Internal server error. " + error.message,
+      500);
+  }
 }
 
 export default convertToResearchStudy;

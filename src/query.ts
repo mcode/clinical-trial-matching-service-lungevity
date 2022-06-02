@@ -4,18 +4,38 @@
  */
 import https from "https";
 import { IncomingMessage } from "http";
+import {recruitmentStatusMap, studyTypeMap, phaseCodeMap, phaseDisplayMap, 
+  recruitmentStatusPermissibleString, studyTypePermissibleString, phasePermissibleString} from "./constants"; 
 import {
   fhir,
   ClinicalTrialsGovService,
   ServiceConfiguration,
   ResearchStudy,
   SearchSet,
+  updateResearchStudyWithClinicalStudy,
+  ClinicalStudy,
+  BasicHttpError,
 } from "clinical-trial-matching-service";
 import convertToResearchStudy from "./researchstudy-mapping";
 
 export interface QueryConfiguration extends ServiceConfiguration {
   endpoint?: string;
   auth_token?: string;
+}
+
+/**
+ * Slight change to the default way research studies are updated.
+ * @param researchStudy the base research study
+ * @param clinicalStudy the clinical study data from ClinicalTrials.gov
+ */
+ export function updateResearchStudy(researchStudy: fhir.ResearchStudy, clinicalStudy: ClinicalStudy): void {
+  if (researchStudy.description) {
+    const briefSummary = clinicalStudy.brief_summary;
+    if (briefSummary) {
+      researchStudy.description += '\n\n' + briefSummary[0].textblock[0];
+    }
+  }
+  updateResearchStudyWithClinicalStudy(researchStudy, clinicalStudy);
 }
 
 /**
@@ -60,30 +80,30 @@ type QueryRequest = string;
  *
  * TO-DO: Fill this out to match your implementation
  */
-export interface QueryTrial extends Record<string, unknown> {
-  name: string;
+export interface QueryTrial extends Record<string, any> {
+  brief_title: string;
 }
 
 /**
  * Type guard to determine if an object is a valid QueryTrial.
  * @param o the object to determine if it is a QueryTrial
  */
-export function isQueryTrial(o: unknown): o is QueryTrial {
+export function isQueryTrial(o: any): o is QueryTrial {
   if (typeof o !== "object" || o === null) return false;
   // TO-DO: Make this match your format.
-  return typeof (o as QueryTrial).name === "string";
+  return typeof (o as QueryTrial).brief_title === "string";
 }
 
 // Generic type for the response data being received from the server.
-export interface QueryResponse extends Record<string, unknown> {
-  matchingTrials: QueryTrial[];
+export interface QueryResponse extends Record<string, any> {
+  results: QueryTrial[];
 }
 
 /**
  * Type guard to determine if an object is a valid QueryResponse.
  * @param o the object to determine if it is a QueryResponse
  */
-export function isQueryResponse(o: unknown): o is QueryResponse {
+export function isQueryResponse(o: any): o is QueryResponse {
   if (typeof o !== "object" || o === null) return false;
 
   // Note that the following DOES NOT check the array to make sure every object
@@ -91,7 +111,7 @@ export function isQueryResponse(o: unknown): o is QueryResponse {
   // makes this type guard or the QueryResponse type sort of invalid. However,
   // the assumption is that a single unparsable trial should not cause the
   // entire response to be thrown away.
-  return Array.isArray((o as QueryResponse).matchingTrials);
+  return Array.isArray((o as QueryResponse).results);
 }
 
 export interface QueryErrorResponse extends Record<string, unknown> {
@@ -144,18 +164,38 @@ export class APIQuery {
   /**
    * A FHIR ResearchStudy phase
    */
-  phase: string;
+  phase: number;
   /**
    * A FHIR ResearchStudy status
    */
   recruitmentStatus: string;
   /**
+   * Lungevity Study Condition
+   */
+  condition: string;
+  /**
+   * Lungevity Study Condition - free text search string
+   */
+   freeText: string;
+   /**
+   * Lungevity Study Condition - Mutation/Translocation/Alteration String
+   */
+  term: string;
+  /**
+   * Lungevity Study Type
+   */
+   studyType: string;
+  /**
+   * Lungevity Study Gender
+   */
+   gender: string;
+  /**
    * A set of conditions.
    */
   conditions: { code: string; system: string }[] = [];
   // TO-DO Add any additional fields which need to be extracted from the bundle to construct query
-
-  /**
+  
+   /**
    * Create a new query object.
    * @param patientBundle the patient bundle to use for field values
    */
@@ -169,14 +209,51 @@ export class APIQuery {
       // Pull out search parameters
       if (resource.resourceType === "Parameters") {
         for (const parameter of resource.parameter) {
-          if (parameter.name === "zipCode") {
-            this.zipCode = parameter.valueString;
-          } else if (parameter.name === "travelRadius") {
-            this.travelRadius = parseFloat(parameter.valueString);
-          } else if (parameter.name === "phase") {
-            this.phase = parameter.valueString;
-          } else if (parameter.name === "recruitmentStatus") {
-            this.recruitmentStatus = parameter.valueString;
+          if(parameter.name == "condition") {
+            this.condition = parameter.valueString;
+          }
+          if(parameter.name == "term") {
+            this.term = parameter.valueString;
+          }
+          if(parameter.name == "gender") {
+            this.gender = parameter.valueString;   
+          }
+          if(parameter.name == "studyType") {
+            const val:string = studyTypeMap.get(parameter.valueString);
+            if(val){
+              this.studyType = val;
+            } else {
+              
+              throw new BasicHttpError(
+                "Invalid value of studyType. Permissible values are "+studyTypePermissibleString,
+              400);
+            }
+            
+          }
+
+          if(parameter.name == "phase") {
+            const val:number = phaseCodeMap.get(parameter.valueString);
+            if(val){
+              this.phase = val;
+            } else{
+              
+              throw new BasicHttpError(
+                "Invalid value of phase. Permissible values are "+phasePermissibleString,
+              400);
+            }
+            
+          }
+
+          if(parameter.name == "recruitmentStatus") {
+            const val:string = recruitmentStatusMap.get(parameter.valueString);
+            if(val){
+              this.recruitmentStatus = val;
+            } else {
+              throw new BasicHttpError(
+                "Invalid value of recruitmentStatus. Permissible values are "+recruitmentStatusPermissibleString,
+              400);
+            }
+            
           }
         }
       }
@@ -204,13 +281,45 @@ export class APIQuery {
    * @return {string} the api query
    */
   toQuery(): QueryRequest {
-    return JSON.stringify({
-      zip: this.zipCode,
-      distance: this.travelRadius,
-      phase: this.phase,
-      status: this.recruitmentStatus,
-      conditions: this.conditions,
-    });
+    var searchString: string = "?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS";
+    //{ condition :",cond:", gender :",gndr:", studyType :",type:", phase :",phase:", recruitmentStatus :",recr:"}
+    let cond = ",cond:";
+   
+    if(this.condition) {
+      cond += this.condition
+    }
+    if(this.freeText) {
+      if(cond != ",cond:")
+        cond += "%2C" + this.freeText;
+      else
+        cond += this.freeText;
+    }
+    if(this.term) {
+      if(cond != ",cond:")
+        cond += "%2C" + this.term;
+      else
+        cond += this.term;
+    }
+    if(cond != ",cond:"){
+      searchString = searchString + cond;
+    }
+    if(this.gender){
+      searchString = searchString + ",gndr:" +  this.gender;
+    }
+    if(this.studyType){
+      searchString = searchString + ",type:" + this.studyType;
+    }
+    if(this.phase){
+      searchString = searchString +  ",phase:" + this.phase;
+    }
+    if(this.recruitmentStatus){
+      searchString = searchString + ",recr:" + this.recruitmentStatus;
+    } else {
+      searchString = searchString + ",recr:open";
+    }
+    
+
+    return searchString;
   }
 
   toString(): string {
@@ -235,7 +344,7 @@ export function convertResponseToSearchSet(
   const studies: ResearchStudy[] = [];
   // For generating IDs
   let id = 0;
-  for (const trial of response.matchingTrials) {
+  for (const trial of response.results) {
     if (isQueryTrial(trial)) {
       studies.push(convertToResearchStudy(trial, id++));
     } else {
@@ -273,15 +382,17 @@ function sendQuery(
   ctgService?: ClinicalTrialsGovService
 ): Promise<SearchSet> {
   return new Promise((resolve, reject) => {
-    const body = Buffer.from(query.toQuery(), "utf8");
-
+    let body = "";
+    if(query) {
+      body = query.toQuery();
+    }
+    console.log(endpoint+body); 
     const request = https.request(
-      endpoint,
+      endpoint+body,
       {
-        method: "POST",
+        method: "GET",
         headers: {
           "Content-Type": "application/json; charset=UTF-8",
-          "Content-Length": body.byteLength.toString(),
           Authorization: "Bearer " + bearerToken,
         },
       },
@@ -332,8 +443,6 @@ function sendQuery(
     );
 
     request.on("error", (error) => reject(error));
-
-    request.write(body);
     request.end();
   });
 }
