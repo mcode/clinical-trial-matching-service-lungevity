@@ -156,7 +156,7 @@ export class APIQuery {
   /**
    * A FHIR ResearchStudy phase
    */
-  phase: number;
+  phase: string;
   /**
    * A FHIR ResearchStudy status
    */
@@ -219,7 +219,7 @@ export class APIQuery {
             }
           }
           if (parameter.name == "phase") {
-            const val: number = phaseCodeMap.get(parameter.valueString);
+            const val: string = phaseCodeMap.get(parameter.valueString);
             if (val) {
               this.phase = val;
             } else {

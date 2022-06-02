@@ -22,13 +22,13 @@ import { join } from "path";
   /**
    * Map to convert parameter.valueString of 'phase' to corresponding Lungevity value
    */
-  export const phaseCodeMap = new Map<string, number>([
-    ["early-phase-1",4],
-    ["phase-0",4],
-    ["phase-1",0],
-    ["phase-2",1],
-    ["phase-3",2],
-    ["phase-4",3],
+  export const phaseCodeMap = new Map<string, string>([
+    ["early-phase-1","4"],
+    ["phase-0","4"],
+    ["phase-1","0"],
+    ["phase-2","1"],
+    ["phase-3","2"],
+    ["phase-4","3"],
   ]);
   
   /**

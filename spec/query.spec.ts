@@ -18,6 +18,7 @@ import createClinicalTrialLookup, {
   QueryTrial,
 } from "../src/query";
 import nock from "nock";
+import { resolve } from "path";
 
 describe("createClinicalTrialLookup()", () => {
   it("creates a function if configured properly", () => {
@@ -51,7 +52,7 @@ describe("isQueryTrial()", () => {
   });
 
   it("returns true on a matching object", () => {
-    expect(isQueryTrial({ name: "Hello" })).toBeTrue();
+    expect(isQueryTrial({ brief_title: "Hello" })).toBeTrue();
   });
 });
 
@@ -65,11 +66,11 @@ describe("isQueryResponse()", () => {
   });
 
   it("returns true on a matching object", () => {
-    expect(isQueryResponse({ matchingTrials: [] })).toBeTrue();
-    expect(isQueryResponse({ matchingTrials: [{ name: "Trial" }] })).toBeTrue();
+    expect(isQueryResponse({ results: [] })).toBeTrue();
+    expect(isQueryResponse({ results: [{ brief_title: "Trial" }] })).toBeTrue();
     // Currently this is true. It may make sense to make it false, but for now,
     // a single invalid trial does not invalidate the array.
-    expect(isQueryResponse({ matchingTrials: [{ invalid: true }] })).toBeTrue();
+    expect(isQueryResponse({ results: [{ invalid: true }] })).toBeTrue();
   });
 });
 
@@ -106,22 +107,30 @@ describe("APIQuery", () => {
                 valueString: "25",
               },
               {
+                "name": "condition",
+                "valueString": "Non-Small Cell Lung Cancer"
+            },
+            {
+                "name": "studyType",
+                "valueString": "Interventional"
+            },
+              {
                 name: "phase",
                 valueString: "phase-1",
               },
               {
                 name: "recruitmentStatus",
-                valueString: "approved",
+                valueString: "Recruiting",
               },
             ],
           },
         },
       ],
     });
-    expect(query.zipCode).toEqual("01730");
-    expect(query.travelRadius).toEqual(25);
-    expect(query.phase).toEqual("phase-1");
-    expect(query.recruitmentStatus).toEqual("approved");
+    expect(query.condition).toEqual("Non-Small Cell Lung Cancer");
+    expect(query.studyType).toEqual("Intr");
+    expect(query.phase).toEqual("0");
+    expect(query.recruitmentStatus).toEqual("Recruiting");
   });
 
   it("gathers conditions", () => {
@@ -182,20 +191,24 @@ describe("APIQuery", () => {
                   valueString: "25",
                 },
                 {
-                  name: "phase",
-                  valueString: "phase-1",
+                  "name": "condition",
+                  "valueString": "Non-Small Cell Lung Cancer"
                 },
                 {
-                  name: "recruitmentStatus",
-                  valueString: "approved",
+                    "name": "studyType",
+                    "valueString": "Interventional"
                 },
+                {
+                    "name": "phase",
+                    "valueString": "phase-1"
+                }
               ],
             },
           },
         ],
       }).toString()
     ).toEqual(
-      '{"zip":"01730","distance":25,"phase":"phase-1","status":"approved","conditions":[]}'
+      '?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS,cond:Non-Small Cell Lung Cancer,type:Intr,phase:0,recr:open'
     );
   });
 
@@ -238,7 +251,7 @@ describe("convertResponseToSearchSet()", () => {
   it("converts trials", () => {
     return expectAsync(
       convertResponseToSearchSet({
-        matchingTrials: [{ name: "test" }],
+        results: [{ brief_title: "test" }],
       }).then((searchSet) => {
         expect(searchSet.entry.length).toEqual(1);
         expect(searchSet.entry[0].resource).toBeInstanceOf(ResearchStudy);
@@ -251,10 +264,10 @@ describe("convertResponseToSearchSet()", () => {
 
   it("skips invalid trials", () => {
     const response: QueryResponse = {
-      matchingTrials: [],
+      results: [],
     };
     // Push on an invalid object
-    response.matchingTrials.push(({
+    response.results.push(({
       invalidObject: true,
     } as unknown) as QueryTrial);
     return expectAsync(convertResponseToSearchSet(response)).toBeResolved();
@@ -273,7 +286,7 @@ describe("convertResponseToSearchSet()", () => {
     return expectAsync(
       convertResponseToSearchSet(
         {
-          matchingTrials: [{ name: "test" }],
+          results: [{ brief_title: "test" }],
         },
         backupService
       )
@@ -314,13 +327,13 @@ describe("ClinicalTrialLookup", () => {
   });
 
   it("generates a request", () => {
-    mockRequest.reply(200, { matchingTrials: [] });
+    mockRequest.reply(500, resolve("{ results: [] }"));
     return expectAsync(matcher(patientBundle)).toBeResolved();
   });
 
   it("rejects with an error if an error is returned by the server", () => {
     // Simulate an error response
-    mockRequest.reply(200, { error: "Test error" });
+    mockRequest.reply(500, { error: "Test error" });
     return expectAsync(matcher(patientBundle)).toBeRejectedWithError(
       "Error from service: Test error"
     );
