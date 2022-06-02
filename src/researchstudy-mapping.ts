@@ -3,10 +3,10 @@
  * the underlying service to the FHIR ResearchStudy type.
  */
 
-import { BasicHttpError, fhir, ResearchStudy } from 'clinical-trial-matching-service';
-import { QueryTrial } from './query';
-import { checkNullString, phaseDisplayMap } from "./constants";
+import { fhir, ResearchStudy } from 'clinical-trial-matching-service';
 import { Address, Location } from 'clinical-trial-matching-service/dist/fhir-types';
+import { checkNullString, phaseDisplayMap } from "./constants";
+import { QueryTrial } from './query';
 
 export function convertToResearchStudy(lungResponse: QueryTrial, id: number): ResearchStudy {
   try {
@@ -29,9 +29,6 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
         text: lungResponse.phase
       };
     }
-    // if (lungResponse.trialCategories && lungResponse.trialCategories.length > 0) {
-    //   result.keyword = convertArrayToCodeableConcept(lungResponse.trialCategories);
-    // }
     if (lungResponse.keyword) {
       result.keyword = [];
       for (const key of lungResponse.keyword) {
@@ -39,18 +36,13 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
       }
     }
     if (lungResponse.overall_contact) {
-
       result.addContact(checkNullString(lungResponse.overall_contact.last_name), checkNullString(lungResponse.overall_contact.phone), checkNullString(lungResponse.overall_contact.email));
     }
-
     if (lungResponse.detailed_description && lungResponse.detailed_description.textblock) {
       // If there is a purpose and whoIsThisFor, use that, otherwise leave the
       // description blank and allow the default CTs.gov service fill it in
       result.description = lungResponse.detailed_description.textblock;
     }
-    // if (lungResponse.purpose) {
-    //   result.objective = [{ name: lungResponse.purpose }];
-    // }
     if (lungResponse.arm_group) {
       result.arm = [];
       for (const a of lungResponse.arm_group) {
@@ -62,7 +54,6 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
     if (lungResponse.sponsors) {
       result.sponsor = result.addContainedResource({ resourceType: 'Organization', id: 'org' + result.id, name: checkNullString(lungResponse.sponsors.agency) });
     }
-
     if (lungResponse.location_countries && lungResponse.location_countries.country) {
       result.location = [];
       for (const c of lungResponse.location_countries.country) {
@@ -76,7 +67,6 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
         }
       }
     }
-
     if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].facility) {
       const facility = lungResponse.location[0].facility;
       var s = <Location>{};
@@ -102,9 +92,8 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
     }
     return result;
   } catch (error) {
-    throw new BasicHttpError(
-      "Internal server error. " + error.message,
-      500);
+      // swallow the error to process next object
+      console.log(error);    
   }
 }
 
