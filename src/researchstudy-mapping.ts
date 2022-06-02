@@ -12,6 +12,7 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
   try {
     // The clinical trial ID is required as it's used to look up the search study
     const result = new ResearchStudy(lungResponse.id_info.org_study_id);
+    result.status="active";
     if (lungResponse.brief_title) {
       result.title = lungResponse.brief_title;
     }

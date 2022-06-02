@@ -245,13 +245,79 @@ describe("APIQuery", () => {
     new APIQuery(bundle);
     // Passing is not raising an exception
   });
+
+  it("throw eror on invalid phase value", () => {
+    expect(() => {
+      new APIQuery({
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Parameters",
+              parameter: [
+                {
+                    "name": "phase",
+                    "valueString": "phase-23"
+                }
+              ],
+            },
+          },
+        ],
+      }).toString()
+    }).toThrowError("Invalid value of phase. Permissible values are |early-phase-1|,|phase-0|,|phase-1|,|phase-2|,|phase-3|,|phase-4|");
+  });
+
+  it("throw eror on invalid studyType value", () => {
+    expect(() => {
+      new APIQuery({
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Parameters",
+              parameter: [
+                {
+                    "name": "studyType",
+                    "valueString": "1"
+                }
+              ],
+            },
+          },
+        ],
+      }).toString()
+    }).toThrowError("Invalid value of studyType. Permissible values are |Interventional|,|Observational|,|Patient Registries|,|Expanded Access: Available|");
+  });
+
+  it("throw eror on invalid recruitmentStatus value", () => {
+    expect(() => {
+      new APIQuery({
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Parameters",
+              parameter: [
+                {
+                    "name": "recruitmentStatus",
+                    "valueString": "1"
+                }
+              ],
+            },
+          },
+        ],
+      }).toString()
+    }).toThrowError("Invalid value of recruitmentStatus. Permissible values are |Recruiting|,|Not Yet Recruiting|,|Expanded Access: Available|");
+  });
 });
 
 describe("convertResponseToSearchSet()", () => {
   it("converts trials", () => {
     return expectAsync(
       convertResponseToSearchSet({
-        results: [{ brief_title: "test" }],
+        results: [{ brief_title: "test","id_info":{"org_study_id":665895},"status":"active" }],
       }).then((searchSet) => {
         expect(searchSet.entry.length).toEqual(1);
         expect(searchSet.entry[0].resource).toBeInstanceOf(ResearchStudy);
@@ -318,8 +384,8 @@ describe("ClinicalTrialLookup", () => {
     });
     // Create the interceptor for the mock request here as it's the same for
     // each test
-    scope = nock("https://www.example.com");
-    mockRequest = scope.post("/endpoint");
+    scope = nock("https://www.example.com"); 
+    mockRequest = scope.get("/endpoint");
   });
   afterEach(() => {
     // Expect the endpoint to have been hit in these tests
@@ -327,7 +393,7 @@ describe("ClinicalTrialLookup", () => {
   });
 
   it("generates a request", () => {
-    mockRequest.reply(500, resolve("{ results: [] }"));
+    mockRequest.reply(200, resolve("{ results: [] }"));
     return expectAsync(matcher(patientBundle)).toBeResolved();
   });
 
