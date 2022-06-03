@@ -11,7 +11,7 @@ import { QueryTrial } from './query';
 export function convertToResearchStudy(lungResponse: QueryTrial, id: number): ResearchStudy {
   try {
     // The clinical trial ID is required as it's used to look up the search study
-    const result = new ResearchStudy(lungResponse.id_info.org_study_id);
+    const result = new ResearchStudy(lungResponse.id_info?lungResponse.id_info.org_study_id:id);
     result.status="active";
     if (lungResponse.brief_title) {
       result.title = lungResponse.brief_title;
@@ -64,13 +64,14 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
     if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].investigator) {
       for (const pi of lungResponse.location[0].investigator) {
         if (pi.role == "Principal Investigator") {
-          result.principalInvestigator = result.addContainedResource({ resourceType: pi.role, id: 'pi' + result.id, name: checkNullString(pi.last_name) });
+          result.principalInvestigator = result.addContainedResource({ resourceType: "Practitioner", id: 'pi' + result.id, name: [{text:checkNullString(pi.last_name)}] });
         }
       }
     }
     if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].facility) {
       const facility = lungResponse.location[0].facility;
       var s = <Location>{};
+      s.resourceType = "Location";
       s.id = 'loc' + result.id;
       s.name = checkNullString(facility.name);
       if (facility.address) {

@@ -352,7 +352,7 @@ describe("convertResponseToSearchSet()", () => {
     return expectAsync(
       convertResponseToSearchSet(
         {
-          results: [{ brief_title: "test" }],
+          results: [{ brief_title: "test","id_info":{"org_study_id":665895},"status":"active" }],
         },
         backupService
       )
@@ -385,7 +385,7 @@ describe("ClinicalTrialLookup", () => {
     // Create the interceptor for the mock request here as it's the same for
     // each test
     scope = nock("https://www.example.com"); 
-    mockRequest = scope.get("/endpoint");
+    mockRequest = scope.get("/endpoint?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS,recr:open");
   });
   afterEach(() => {
     // Expect the endpoint to have been hit in these tests
@@ -393,7 +393,7 @@ describe("ClinicalTrialLookup", () => {
   });
 
   it("generates a request", () => {
-    mockRequest.reply(200, resolve("{ results: [] }"));
+    mockRequest.reply(200, {results:[{ brief_title: 'test','id_info':{'org_study_id':665895},'status':'active' }]});
     return expectAsync(matcher(patientBundle)).toBeResolved();
   });
 
@@ -401,7 +401,7 @@ describe("ClinicalTrialLookup", () => {
     // Simulate an error response
     mockRequest.reply(500, { error: "Test error" });
     return expectAsync(matcher(patientBundle)).toBeRejectedWithError(
-      "Error from service: Test error"
+      "Server returned 500 Internal server error"
     );
   });
 
@@ -409,7 +409,7 @@ describe("ClinicalTrialLookup", () => {
     // Simulate an error response
     mockRequest.reply(500, "Internal Server Error");
     return expectAsync(matcher(patientBundle)).toBeRejectedWithError(
-      /^Server returned 500/
+      "Server returned 500 Internal server error"
     );
   });
 

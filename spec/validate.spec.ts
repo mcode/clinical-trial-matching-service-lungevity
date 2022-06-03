@@ -19,7 +19,7 @@ describe('FHIR Validation', () => {
           return;
         }
         const json: QueryTrial = JSON.parse(data) as QueryTrial;
-        const study = convertToResearchStudy(json, 1);
+        const study = convertToResearchStudy(json.results[0], 1);
         const result = fhir.validate(study);
         if (result.messages && result.messages.length > 0) {
           console.error('Validation has messages:');
