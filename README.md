@@ -35,7 +35,7 @@ The ResearchStudy object passed back by this server must be [FHIR-compliant](htt
 
 1. Run `npm install`
 2. Run `npm start`
-3. The service will now be running at http://localhost:3000/
+3. The service will now be running at http://localhost:3003/
 
 # Testing
 
