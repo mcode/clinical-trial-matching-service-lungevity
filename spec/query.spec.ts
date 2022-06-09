@@ -6,19 +6,14 @@
 import {
   ClinicalTrialsGovService,
   fhir,
-  ResearchStudy,
+  ResearchStudy
 } from "clinical-trial-matching-service";
-import createClinicalTrialLookup, {
-  convertResponseToSearchSet,
-  isQueryTrial,
-  isQueryResponse,
-  isQueryErrorResponse,
-  APIQuery,
-  QueryResponse,
-  QueryTrial,
-} from "../src/query";
 import nock from "nock";
-import { resolve } from "path";
+import { getEmptyStringIfNull, phasePermissibleString } from "../src/constants";
+import { isLungevityResponse, LungevityResponse } from "../src/lungevity-types";
+import createClinicalTrialLookup, {
+  APIQuery, convertResponseToSearchSet, isQueryErrorResponse, isQueryResponse, isQueryTrial, QueryResponse
+} from "../src/query";
 
 describe("createClinicalTrialLookup()", () => {
   it("creates a function if configured properly", () => {
@@ -52,7 +47,7 @@ describe("isQueryTrial()", () => {
   });
 
   it("returns true on a matching object", () => {
-    expect(isQueryTrial({ brief_title: "Hello" })).toBeTrue();
+    expect(isQueryTrial({ name: "Hello" })).toBeTrue();
   });
 });
 
@@ -85,6 +80,30 @@ describe("isQueryErrorResponse()", () => {
 
   it("returns true on a matching object", () => {
     expect(isQueryErrorResponse({ error: "oops" })).toBeTrue();
+  });
+});
+
+describe("isLungevityResponse()", () => {
+  it("returns false for non-lungevity-response objects", () => {
+    expect(isLungevityResponse(null)).toBeFalse();
+    expect(isLungevityResponse(true)).toBeFalse();
+    expect(isLungevityResponse("string")).toBeFalse();
+    expect(isLungevityResponse(42)).toBeFalse();
+    expect(isLungevityResponse({ invalid: true })).toBeFalse();
+    expect(isLungevityResponse({ results: [] })).toBeFalse();
+    expect(isLungevityResponse({ brief_title: 123})).toBeFalse();
+  });
+
+  it("returns true on a matching lungevity object", () => {
+    expect(isLungevityResponse({ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active" })).toBeTrue();
+    expect(isLungevityResponse({ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active", invalid:true })).toBeTrue();
+  });
+});
+
+describe("getEmptyStringIfNull()", () => {
+  it("returns empty string in case of null", () => {
+    expect(getEmptyStringIfNull(null)).toEqual("");
+    expect(getEmptyStringIfNull("string")).toEqual("string");
   });
 });
 
@@ -265,7 +284,7 @@ describe("APIQuery", () => {
           },
         ],
       }).toString()
-    }).toThrowError("Invalid value of phase. Permissible values are |early-phase-1|,|phase-0|,|phase-1|,|phase-2|,|phase-3|,|phase-4|");
+    }).toThrowError("Invalid value of phase. Permissible values are " + phasePermissibleString);
   });
 
   it("throw eror on invalid studyType value", () => {
@@ -317,7 +336,7 @@ describe("convertResponseToSearchSet()", () => {
   it("converts trials", () => {
     return expectAsync(
       convertResponseToSearchSet({
-        results: [{ brief_title: "test","id_info":{"org_study_id":665895},"status":"active" }],
+        results: [{ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active" }],
       }).then((searchSet) => {
         expect(searchSet.entry.length).toEqual(1);
         expect(searchSet.entry[0].resource).toBeInstanceOf(ResearchStudy);
@@ -335,7 +354,7 @@ describe("convertResponseToSearchSet()", () => {
     // Push on an invalid object
     response.results.push(({
       invalidObject: true,
-    } as unknown) as QueryTrial);
+    } as unknown) as LungevityResponse);
     return expectAsync(convertResponseToSearchSet(response)).toBeResolved();
   });
 
@@ -352,7 +371,7 @@ describe("convertResponseToSearchSet()", () => {
     return expectAsync(
       convertResponseToSearchSet(
         {
-          results: [{ brief_title: "test","id_info":{"org_study_id":665895},"status":"active" }],
+          results: [{ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active" }],
         },
         backupService
       )

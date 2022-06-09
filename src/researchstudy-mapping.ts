@@ -5,10 +5,10 @@
 
 import { fhir, ResearchStudy } from 'clinical-trial-matching-service';
 import { Address, Location } from 'clinical-trial-matching-service/dist/fhir-types';
-import { checkNullString, phaseDisplayMap } from "./constants";
-import { QueryTrial } from './query';
+import { getEmptyStringIfNull, phaseDisplayMap } from "./constants";
+import { LungevityResponse } from './lungevity-types';
 
-export function convertToResearchStudy(lungResponse: QueryTrial, id: number): ResearchStudy {
+export function convertToResearchStudy(lungResponse: LungevityResponse, id: number): ResearchStudy {
   try {
     // The clinical trial ID is required as it's used to look up the search study
     const result = new ResearchStudy(lungResponse.id_info?lungResponse.id_info.org_study_id:id);
@@ -37,7 +37,7 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
       }
     }
     if (lungResponse.overall_contact) {
-      result.addContact(checkNullString(lungResponse.overall_contact.last_name), checkNullString(lungResponse.overall_contact.phone), checkNullString(lungResponse.overall_contact.email));
+      result.addContact(getEmptyStringIfNull(lungResponse.overall_contact.last_name), getEmptyStringIfNull(lungResponse.overall_contact.phone), getEmptyStringIfNull(lungResponse.overall_contact.email));
     }
     if (lungResponse.detailed_description && lungResponse.detailed_description.textblock) {
       // If there is a purpose and whoIsThisFor, use that, otherwise leave the
@@ -48,12 +48,12 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
       result.arm = [];
       for (const a of lungResponse.arm_group) {
         const codeable: fhir.CodeableConcept = {};
-        codeable.text = checkNullString(a.arm_group_type);
-        result.arm.push({ type: codeable, name: checkNullString(a.arm_group_label), description: checkNullString(a.description) });
+        codeable.text = getEmptyStringIfNull(a.arm_group_type);
+        result.arm.push({ type: codeable, name: getEmptyStringIfNull(a.arm_group_label), description: getEmptyStringIfNull(a.description) });
       }
     }
     if (lungResponse.sponsors) {
-      result.sponsor = result.addContainedResource({ resourceType: 'Organization', id: 'org' + result.id, name: checkNullString(lungResponse.sponsors.agency) });
+      result.sponsor = result.addContainedResource({ resourceType: 'Organization', id: 'org' + result.id, name: getEmptyStringIfNull(lungResponse.sponsors.lead_sponsor.agency) });
     }
     if (lungResponse.location_countries && lungResponse.location_countries.country) {
       result.location = [];
@@ -64,29 +64,30 @@ export function convertToResearchStudy(lungResponse: QueryTrial, id: number): Re
     if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].investigator) {
       for (const pi of lungResponse.location[0].investigator) {
         if (pi.role == "Principal Investigator") {
-          result.principalInvestigator = result.addContainedResource({ resourceType: "Practitioner", id: 'pi' + result.id, name: [{text:checkNullString(pi.last_name)}] });
+          result.principalInvestigator = result.addContainedResource({ resourceType: "Practitioner", id: 'pi' + result.id, name: [{text:getEmptyStringIfNull(pi.last_name)}] });
         }
       }
     }
     if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].facility) {
-      const facility = lungResponse.location[0].facility;
-      var s = <Location>{};
+      const location = lungResponse.location[0];  
+      const facility = location.facility;
+      const s = <Location>{};
       s.resourceType = "Location";
       s.id = 'loc' + result.id;
-      s.name = checkNullString(facility.name);
+      s.name = getEmptyStringIfNull(facility.name);
       if (facility.address) {
         s.address = <Address>{};
         s.address.use = 'work';
         s.address.type = 'both';
         //    s.address.text?: string;
         //   s.address.line?: string[];
-        s.address.city = checkNullString(facility.address.city);
+        s.address.city = getEmptyStringIfNull(facility.address.city);
         //      s.address.district?: string;
-        s.address.state = checkNullString(facility.address.state);
-        s.address.postalCode = checkNullString(facility.address.zip);
-        s.address.country = checkNullString(facility.address.country);
-        if (facility.geodata && facility.geodata.latitude && facility.geodata.longitude) {
-          s.position = { latitude: facility.geodata.latitude, longitude: facility.geodata.longitude };
+        s.address.state = getEmptyStringIfNull(facility.address.state);
+        s.address.postalCode = getEmptyStringIfNull(facility.address.zip);
+        s.address.country = getEmptyStringIfNull(facility.address.country);
+        if (location.geodata && location.geodata.latitude && location.geodata.longitude) {
+          s.position = { latitude: location.geodata.latitude, longitude: location.geodata.longitude };
         }
 
       }

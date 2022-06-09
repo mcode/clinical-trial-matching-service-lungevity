@@ -9,6 +9,7 @@ import {
 import { IncomingMessage } from "http";
 import https from "https";
 import { phaseCodeMap, phasePermissibleString, recruitmentStatusMap, recruitmentStatusPermissibleString, studyTypeMap, studyTypePermissibleString } from "./constants";
+import { isLungevityResponse, LungevityResponse } from "./lungevity-types";
 import convertToResearchStudy from "./researchstudy-mapping";
 
 
@@ -55,34 +56,35 @@ export default createClinicalTrialLookup;
 type QueryRequest = string;
 
 /**
- * Generic type for the trials returned.
+ * Generic type for the trials returned. 
+ * LungevityResponse is used instead of QueryTrial 
  *
  * TO-DO: Fill this out to match your implementation
  */
-export interface QueryTrial extends Record<string, any> {
-  brief_title: string;
+export interface QueryTrial extends Record<string, unknown> {
+  name: string;
 }
 
 /**
  * Type guard to determine if an object is a valid QueryTrial.
  * @param o the object to determine if it is a QueryTrial
  */
-export function isQueryTrial(o: any): o is QueryTrial {
+export function isQueryTrial(o: unknown): o is QueryTrial {
   if (typeof o !== "object" || o === null) return false;
   // TO-DO: Make this match your format.
-  return typeof (o as QueryTrial).brief_title === "string";
+  return typeof (o as QueryTrial).name === "string";
 }
 
 // Generic type for the response data being received from the server.
-export interface QueryResponse extends Record<string, any> {
-  results: QueryTrial[];
+export interface QueryResponse extends Record<string, unknown> {
+  results: LungevityResponse[];
 }
 
 /**
  * Type guard to determine if an object is a valid QueryResponse.
  * @param o the object to determine if it is a QueryResponse
  */
-export function isQueryResponse(o: any): o is QueryResponse {
+export function isQueryResponse(o: unknown): o is QueryResponse {
   if (typeof o !== "object" || o === null) return false;
 
   // Note that the following DOES NOT check the array to make sure every object
@@ -262,8 +264,8 @@ export class APIQuery {
    * @return {string} the api query
    */
   toQuery(): QueryRequest {
-    var searchString: string = "?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS";
-    
+    let searchString = "?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS";
+
     let cond = ",cond:";
 
     if (this.condition) {
@@ -324,7 +326,7 @@ export function convertResponseToSearchSet(
   // For generating IDs
   let id = 0;
   for (const trial of response.results) {
-    if (isQueryTrial(trial)) {
+    if (isLungevityResponse(trial)) {
       studies.push(convertToResearchStudy(trial, id++));
     } else {
       // This trial could not be understood. It can be ignored if that should
