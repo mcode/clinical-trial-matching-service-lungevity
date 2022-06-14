@@ -1,12 +1,12 @@
-import { QueryTrial } from '../src/query';
-import convertToResearchStudy from '../src/researchstudy-mapping';
-
-import fs from 'fs';
-import path from 'path';
-
 // The 'fhir' module is missing types for some reason, despite being written in TypeScript
 import { Fhir } from 'fhir/fhir';
 import { ValidatorMessage } from 'fhir/validator';
+import fs from 'fs';
+import path from 'path';
+import { QueryResponse } from '../src/query';
+import convertToResearchStudy from '../src/researchstudy-mapping';
+
+
 
 describe('FHIR Validation', () => {
   const fhir = new Fhir();
@@ -18,8 +18,8 @@ describe('FHIR Validation', () => {
           reject(error);
           return;
         }
-        const json: QueryTrial = JSON.parse(data) as QueryTrial;
-        const study = convertToResearchStudy(json, 1);
+        const json: QueryResponse = JSON.parse(data) as QueryResponse;
+        const study = convertToResearchStudy(json.results[0], 1);
         const result = fhir.validate(study);
         if (result.messages && result.messages.length > 0) {
           console.error('Validation has messages:');

@@ -6,18 +6,14 @@
 import {
   ClinicalTrialsGovService,
   fhir,
-  ResearchStudy,
+  ResearchStudy
 } from "clinical-trial-matching-service";
-import createClinicalTrialLookup, {
-  convertResponseToSearchSet,
-  isQueryTrial,
-  isQueryResponse,
-  isQueryErrorResponse,
-  APIQuery,
-  QueryResponse,
-  QueryTrial,
-} from "../src/query";
 import nock from "nock";
+import { getEmptyStringIfNull, phasePermissibleString } from "../src/constants";
+import { isLungevityResponse, LungevityResponse } from "../src/lungevity-types";
+import createClinicalTrialLookup, {
+  APIQuery, convertResponseToSearchSet, isQueryErrorResponse, isQueryResponse, isQueryTrial, QueryResponse
+} from "../src/query";
 
 describe("createClinicalTrialLookup()", () => {
   it("creates a function if configured properly", () => {
@@ -65,11 +61,11 @@ describe("isQueryResponse()", () => {
   });
 
   it("returns true on a matching object", () => {
-    expect(isQueryResponse({ matchingTrials: [] })).toBeTrue();
-    expect(isQueryResponse({ matchingTrials: [{ name: "Trial" }] })).toBeTrue();
+    expect(isQueryResponse({ results: [] })).toBeTrue();
+    expect(isQueryResponse({ results: [{ brief_title: "Trial" }] })).toBeTrue();
     // Currently this is true. It may make sense to make it false, but for now,
     // a single invalid trial does not invalidate the array.
-    expect(isQueryResponse({ matchingTrials: [{ invalid: true }] })).toBeTrue();
+    expect(isQueryResponse({ results: [{ invalid: true }] })).toBeTrue();
   });
 });
 
@@ -84,6 +80,30 @@ describe("isQueryErrorResponse()", () => {
 
   it("returns true on a matching object", () => {
     expect(isQueryErrorResponse({ error: "oops" })).toBeTrue();
+  });
+});
+
+describe("isLungevityResponse()", () => {
+  it("returns false for non-lungevity-response objects", () => {
+    expect(isLungevityResponse(null)).toBeFalse();
+    expect(isLungevityResponse(true)).toBeFalse();
+    expect(isLungevityResponse("string")).toBeFalse();
+    expect(isLungevityResponse(42)).toBeFalse();
+    expect(isLungevityResponse({ invalid: true })).toBeFalse();
+    expect(isLungevityResponse({ results: [] })).toBeFalse();
+    expect(isLungevityResponse({ brief_title: 123})).toBeFalse();
+  });
+
+  it("returns true on a matching lungevity object", () => {
+    expect(isLungevityResponse({ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active" })).toBeTrue();
+    expect(isLungevityResponse({ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active", invalid:true })).toBeTrue();
+  });
+});
+
+describe("getEmptyStringIfNull()", () => {
+  it("returns empty string in case of null", () => {
+    expect(getEmptyStringIfNull(null)).toEqual("");
+    expect(getEmptyStringIfNull("string")).toEqual("string");
   });
 });
 
@@ -106,22 +126,30 @@ describe("APIQuery", () => {
                 valueString: "25",
               },
               {
+                "name": "condition",
+                "valueString": "Non-Small Cell Lung Cancer"
+            },
+            {
+                "name": "studyType",
+                "valueString": "Interventional"
+            },
+              {
                 name: "phase",
                 valueString: "phase-1",
               },
               {
                 name: "recruitmentStatus",
-                valueString: "approved",
+                valueString: "Recruiting",
               },
             ],
           },
         },
       ],
     });
-    expect(query.zipCode).toEqual("01730");
-    expect(query.travelRadius).toEqual(25);
-    expect(query.phase).toEqual("phase-1");
-    expect(query.recruitmentStatus).toEqual("approved");
+    expect(query.condition).toEqual("Non-Small Cell Lung Cancer");
+    expect(query.studyType).toEqual("Intr");
+    expect(query.phase).toEqual("0");
+    expect(query.recruitmentStatus).toEqual("Recruiting");
   });
 
   it("gathers conditions", () => {
@@ -182,20 +210,24 @@ describe("APIQuery", () => {
                   valueString: "25",
                 },
                 {
-                  name: "phase",
-                  valueString: "phase-1",
+                  "name": "condition",
+                  "valueString": "Non-Small Cell Lung Cancer"
                 },
                 {
-                  name: "recruitmentStatus",
-                  valueString: "approved",
+                    "name": "studyType",
+                    "valueString": "Interventional"
                 },
+                {
+                    "name": "phase",
+                    "valueString": "phase-1"
+                }
               ],
             },
           },
         ],
       }).toString()
     ).toEqual(
-      '{"zip":"01730","distance":25,"phase":"phase-1","status":"approved","conditions":[]}'
+      '?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS,cond:Non-Small Cell Lung Cancer,type:Intr,phase:0,recr:open'
     );
   });
 
@@ -232,13 +264,79 @@ describe("APIQuery", () => {
     new APIQuery(bundle);
     // Passing is not raising an exception
   });
+
+  it("throw eror on invalid phase value", () => {
+    expect(() => {
+      new APIQuery({
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Parameters",
+              parameter: [
+                {
+                    "name": "phase",
+                    "valueString": "phase-23"
+                }
+              ],
+            },
+          },
+        ],
+      }).toString()
+    }).toThrowError("Invalid value of phase. Permissible values are " + phasePermissibleString);
+  });
+
+  it("throw eror on invalid studyType value", () => {
+    expect(() => {
+      new APIQuery({
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Parameters",
+              parameter: [
+                {
+                    "name": "studyType",
+                    "valueString": "1"
+                }
+              ],
+            },
+          },
+        ],
+      }).toString()
+    }).toThrowError("Invalid value of studyType. Permissible values are |Interventional|,|Observational|,|Patient Registries|,|Expanded Access: Available|");
+  });
+
+  it("throw eror on invalid recruitmentStatus value", () => {
+    expect(() => {
+      new APIQuery({
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Parameters",
+              parameter: [
+                {
+                    "name": "recruitmentStatus",
+                    "valueString": "1"
+                }
+              ],
+            },
+          },
+        ],
+      }).toString()
+    }).toThrowError("Invalid value of recruitmentStatus. Permissible values are |Recruiting|,|Not Yet Recruiting|,|Expanded Access: Available|");
+  });
 });
 
 describe("convertResponseToSearchSet()", () => {
   it("converts trials", () => {
     return expectAsync(
       convertResponseToSearchSet({
-        matchingTrials: [{ name: "test" }],
+        results: [{ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active" }],
       }).then((searchSet) => {
         expect(searchSet.entry.length).toEqual(1);
         expect(searchSet.entry[0].resource).toBeInstanceOf(ResearchStudy);
@@ -251,12 +349,12 @@ describe("convertResponseToSearchSet()", () => {
 
   it("skips invalid trials", () => {
     const response: QueryResponse = {
-      matchingTrials: [],
+      results: [],
     };
     // Push on an invalid object
-    response.matchingTrials.push(({
+    response.results.push(({
       invalidObject: true,
-    } as unknown) as QueryTrial);
+    } as unknown) as LungevityResponse);
     return expectAsync(convertResponseToSearchSet(response)).toBeResolved();
   });
 
@@ -273,7 +371,7 @@ describe("convertResponseToSearchSet()", () => {
     return expectAsync(
       convertResponseToSearchSet(
         {
-          matchingTrials: [{ name: "test" }],
+          results: [{ brief_title: "test","id_info":{"org_study_id":665895, nct_id:"NCA000123"},"status":"active" }],
         },
         backupService
       )
@@ -305,8 +403,8 @@ describe("ClinicalTrialLookup", () => {
     });
     // Create the interceptor for the mock request here as it's the same for
     // each test
-    scope = nock("https://www.example.com");
-    mockRequest = scope.post("/endpoint");
+    scope = nock("https://www.example.com"); 
+    mockRequest = scope.get("/endpoint?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS,recr:open");
   });
   afterEach(() => {
     // Expect the endpoint to have been hit in these tests
@@ -314,15 +412,15 @@ describe("ClinicalTrialLookup", () => {
   });
 
   it("generates a request", () => {
-    mockRequest.reply(200, { matchingTrials: [] });
+    mockRequest.reply(200, {results:[{ brief_title: 'test','id_info':{'org_study_id':665895},'status':'active' }]});
     return expectAsync(matcher(patientBundle)).toBeResolved();
   });
 
   it("rejects with an error if an error is returned by the server", () => {
     // Simulate an error response
-    mockRequest.reply(200, { error: "Test error" });
+    mockRequest.reply(500, { error: "Test error" });
     return expectAsync(matcher(patientBundle)).toBeRejectedWithError(
-      "Error from service: Test error"
+      "Server returned 500 Internal server error"
     );
   });
 
@@ -330,7 +428,7 @@ describe("ClinicalTrialLookup", () => {
     // Simulate an error response
     mockRequest.reply(500, "Internal Server Error");
     return expectAsync(matcher(patientBundle)).toBeRejectedWithError(
-      /^Server returned 500/
+      "Server returned 500 Internal server error"
     );
   });
 

@@ -2,16 +2,16 @@
  * Handles conversion of patient bundle data to a proper request for matching service apis.
  * Retrieves api response as promise to be used in conversion to fhir ResearchStudy
  */
-import https from "https";
-import { IncomingMessage } from "http";
 import {
-  fhir,
-  ClinicalTrialsGovService,
-  ServiceConfiguration,
-  ResearchStudy,
-  SearchSet,
+  BasicHttpError, ClinicalTrialsGovService, fhir, ResearchStudy,
+  SearchSet, ServiceConfiguration
 } from "clinical-trial-matching-service";
+import { IncomingMessage } from "http";
+import https from "https";
+import { phaseCodeMap, phasePermissibleString, recruitmentStatusMap, recruitmentStatusPermissibleString, studyTypeMap, studyTypePermissibleString } from "./constants";
+import { isLungevityResponse, LungevityResponse } from "./lungevity-types";
 import convertToResearchStudy from "./researchstudy-mapping";
+
 
 export interface QueryConfiguration extends ServiceConfiguration {
   endpoint?: string;
@@ -56,7 +56,8 @@ export default createClinicalTrialLookup;
 type QueryRequest = string;
 
 /**
- * Generic type for the trials returned.
+ * Generic type for the trials returned. 
+ * LungevityResponse is used instead of QueryTrial 
  *
  * TO-DO: Fill this out to match your implementation
  */
@@ -76,7 +77,7 @@ export function isQueryTrial(o: unknown): o is QueryTrial {
 
 // Generic type for the response data being received from the server.
 export interface QueryResponse extends Record<string, unknown> {
-  matchingTrials: QueryTrial[];
+  results: LungevityResponse[];
 }
 
 /**
@@ -91,7 +92,7 @@ export function isQueryResponse(o: unknown): o is QueryResponse {
   // makes this type guard or the QueryResponse type sort of invalid. However,
   // the assumption is that a single unparsable trial should not cause the
   // entire response to be thrown away.
-  return Array.isArray((o as QueryResponse).matchingTrials);
+  return Array.isArray((o as QueryResponse).results);
 }
 
 export interface QueryErrorResponse extends Record<string, unknown> {
@@ -107,10 +108,6 @@ export function isQueryErrorResponse(o: unknown): o is QueryErrorResponse {
   return typeof (o as QueryErrorResponse).error === "string";
 }
 
-// Generic type that represents a JSON object - that is, an object parsed from
-// JSON. Note that the return value from JSON.parse is an any, this does not
-// represent that.
-type JsonObject = Record<string, unknown>;
 
 // API RESPONSE SECTION
 export class APIError extends Error {
@@ -120,6 +117,23 @@ export class APIError extends Error {
     public body: string
   ) {
     super(message);
+  }
+}
+export class Http500Error extends BasicHttpError {
+  constructor(
+    message: string,
+    public body: string
+  ) {
+    super(message, 400);
+  }
+}
+
+export class Http400Error extends BasicHttpError {
+  constructor(
+    message: string,
+    public body?: string
+  ) {
+    super(message, 400);
   }
 }
 
@@ -150,15 +164,35 @@ export class APIQuery {
    */
   recruitmentStatus: string;
   /**
+   * Lungevity Study Condition
+   */
+  condition: string;
+  /**
+   * Lungevity Study Condition - free text search string
+   */
+  freeText: string;
+  /**
+  * Lungevity Study Condition - Mutation/Translocation/Alteration String
+  */
+  term: string;
+  /**
+   * Lungevity Study Type
+   */
+  studyType: string;
+  /**
+   * Lungevity Study Gender
+   */
+  gender: string;
+  /**
    * A set of conditions.
    */
   conditions: { code: string; system: string }[] = [];
   // TO-DO Add any additional fields which need to be extracted from the bundle to construct query
 
   /**
-   * Create a new query object.
-   * @param patientBundle the patient bundle to use for field values
-   */
+  * Create a new query object.
+  * @param patientBundle the patient bundle to use for field values
+  */
   constructor(patientBundle: fhir.Bundle) {
     for (const entry of patientBundle.entry) {
       if (!("resource" in entry)) {
@@ -169,14 +203,38 @@ export class APIQuery {
       // Pull out search parameters
       if (resource.resourceType === "Parameters") {
         for (const parameter of resource.parameter) {
-          if (parameter.name === "zipCode") {
-            this.zipCode = parameter.valueString;
-          } else if (parameter.name === "travelRadius") {
-            this.travelRadius = parseFloat(parameter.valueString);
-          } else if (parameter.name === "phase") {
-            this.phase = parameter.valueString;
-          } else if (parameter.name === "recruitmentStatus") {
-            this.recruitmentStatus = parameter.valueString;
+          if (parameter.name == "condition") {
+            this.condition = parameter.valueString;
+          }
+          if (parameter.name == "term") {
+            this.term = parameter.valueString;
+          }
+          if (parameter.name == "gender") {
+            this.gender = parameter.valueString;
+          }
+          if (parameter.name == "studyType") {
+            const val: string = studyTypeMap.get(parameter.valueString);
+            if (val) {
+              this.studyType = val;
+            } else {
+              throw new Http400Error("Invalid value of studyType. Permissible values are " + studyTypePermissibleString);
+            }
+          }
+          if (parameter.name == "phase") {
+            const val: string = phaseCodeMap.get(parameter.valueString);
+            if (val) {
+              this.phase = val;
+            } else {
+              throw new Http400Error("Invalid value of phase. Permissible values are " + phasePermissibleString);
+            }
+          }
+          if (parameter.name == "recruitmentStatus") {
+            const val: string = recruitmentStatusMap.get(parameter.valueString);
+            if (val) {
+              this.recruitmentStatus = val;
+            } else {
+              throw new Http400Error("Invalid value of recruitmentStatus. Permissible values are " + recruitmentStatusPermissibleString);
+            }
           }
         }
       }
@@ -201,16 +259,48 @@ export class APIQuery {
 
   /**
    * Create the information sent to the server.
+   * the return query format is like:
+   * ?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS,cond:Non-Small Cell Lung Cancer,type:Intr,phase:4,recr:Recruiting
    * @return {string} the api query
    */
   toQuery(): QueryRequest {
-    return JSON.stringify({
-      zip: this.zipCode,
-      distance: this.travelRadius,
-      phase: this.phase,
-      status: this.recruitmentStatus,
-      conditions: this.conditions,
-    });
+    let searchString = "?query=term:lung cancer,no_unk:Y,cntry1=NA%3AUS";
+
+    let cond = ",cond:";
+
+    if (this.condition) {
+      cond += this.condition
+    }
+    if (this.freeText) {
+      if (cond != ",cond:")
+        cond += "%2C" + this.freeText;
+      else
+        cond += this.freeText;
+    }
+    if (this.term) {
+      if (cond != ",cond:")
+        cond += "%2C" + this.term;
+      else
+        cond += this.term;
+    }
+    if (cond != ",cond:") {
+      searchString = searchString + cond;
+    }
+    if (this.gender) {
+      searchString = searchString + ",gndr:" + this.gender;
+    }
+    if (this.studyType) {
+      searchString = searchString + ",type:" + this.studyType;
+    }
+    if (this.phase) {
+      searchString = searchString + ",phase:" + this.phase;
+    }
+    if (this.recruitmentStatus) {
+      searchString = searchString + ",recr:" + this.recruitmentStatus;
+    } else {
+      searchString = searchString + ",recr:open";
+    }
+    return searchString;
   }
 
   toString(): string {
@@ -235,8 +325,8 @@ export function convertResponseToSearchSet(
   const studies: ResearchStudy[] = [];
   // For generating IDs
   let id = 0;
-  for (const trial of response.matchingTrials) {
-    if (isQueryTrial(trial)) {
+  for (const trial of response.results) {
+    if (isLungevityResponse(trial)) {
       studies.push(convertToResearchStudy(trial, id++));
     } else {
       // This trial could not be understood. It can be ignored if that should
@@ -273,15 +363,17 @@ function sendQuery(
   ctgService?: ClinicalTrialsGovService
 ): Promise<SearchSet> {
   return new Promise((resolve, reject) => {
-    const body = Buffer.from(query.toQuery(), "utf8");
-
+    let body = "";
+    if (query) {
+      body = query.toQuery();
+    }
+    console.log(endpoint + body);
     const request = https.request(
-      endpoint,
+      endpoint + body,
       {
-        method: "POST",
+        method: "GET",
         headers: {
           "Content-Type": "application/json; charset=UTF-8",
-          "Content-Length": body.byteLength.toString(),
           Authorization: "Bearer " + bearerToken,
         },
       },
@@ -297,10 +389,19 @@ function sendQuery(
             try {
               json = JSON.parse(responseBody) as unknown;
             } catch (ex) {
+              /**
+               * Earlier APIError object was not serializing properly the returned reponse was
+               { 
+                    "error": "Internal server error",
+                    "exception": "[object Error]"
+               }
+
+               thus add new class Http500Error, Http400Error
+               */
+
               reject(
-                new APIError(
+                new Http500Error(
                   "Unable to parse response as JSON",
-                  result,
                   responseBody
                 )
               );
@@ -309,9 +410,8 @@ function sendQuery(
               resolve(convertResponseToSearchSet(json, ctgService));
             } else if (isQueryErrorResponse(json)) {
               reject(
-                new APIError(
-                  `Error from service: ${json.error}`,
-                  result,
+                new Http500Error(
+                  `Error from service: ${json.error ? json.error : "unknown"}`,
                   responseBody
                 )
               );
@@ -320,9 +420,8 @@ function sendQuery(
             }
           } else {
             reject(
-              new APIError(
-                `Server returned ${result.statusCode} ${result.statusMessage}`,
-                result,
+              new Http500Error(
+                `Server returned ${result.statusCode ? result.statusCode : "500"} ${result.statusMessage ? result.statusMessage : "Internal server error"}`,
                 responseBody
               )
             );
@@ -332,8 +431,6 @@ function sendQuery(
     );
 
     request.on("error", (error) => reject(error));
-
-    request.write(body);
     request.end();
   });
 }
