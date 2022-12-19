@@ -50,9 +50,9 @@ export const phasePermissibleString = `|${Array.from(phaseCodeMap.keys()).join("
 
 /**
  * Utility method to check null string and return empty string
- * @param str 
- * @returns 
+ * @param str
+ * @returns
  */
-export function getEmptyStringIfNull(str: string): string {
+export function getEmptyStringIfNull(str: string | null): string {
   return str ? str : "";
 }

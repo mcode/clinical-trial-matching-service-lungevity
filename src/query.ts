@@ -3,11 +3,12 @@
  * Retrieves api response as promise to be used in conversion to fhir ResearchStudy
  */
 import {
-  BasicHttpError, ClinicalTrialsGovService, fhir, ResearchStudy,
+  BasicHttpError, ClinicalTrialsGovService, ResearchStudy,
   SearchSet, ServiceConfiguration
 } from "clinical-trial-matching-service";
 import { IncomingMessage } from "http";
 import https from "https";
+import { Bundle, Coding, Condition } from "fhir/r4";
 import { phaseCodeMap, phasePermissibleString, recruitmentStatusMap, recruitmentStatusPermissibleString, studyTypeMap, studyTypePermissibleString } from "./constants";
 import { isLungevityResponse, LungevityResponse } from "./lungevity-types";
 import convertToResearchStudy from "./researchstudy-mapping";
@@ -29,7 +30,7 @@ export interface QueryConfiguration extends ServiceConfiguration {
 export function createClinicalTrialLookup(
   configuration: QueryConfiguration,
   ctgService?: ClinicalTrialsGovService
-): (patientBundle: fhir.Bundle) => Promise<SearchSet> {
+): (patientBundle: Bundle) => Promise<SearchSet> {
   // Raise errors on missing configuration
   if (typeof configuration.endpoint !== "string") {
     throw new Error("Missing endpoint in configuration");
@@ -40,7 +41,7 @@ export function createClinicalTrialLookup(
   const endpoint = configuration.endpoint;
   const bearerToken = configuration.auth_token;
   return function getMatchingClinicalTrials(
-    patientBundle: fhir.Bundle
+    patientBundle: Bundle
   ): Promise<SearchSet> {
     // Create the query based on the patient bundle:
     const query = new APIQuery(patientBundle);
@@ -56,8 +57,8 @@ export default createClinicalTrialLookup;
 type QueryRequest = string;
 
 /**
- * Generic type for the trials returned. 
- * LungevityResponse is used instead of QueryTrial 
+ * Generic type for the trials returned.
+ * LungevityResponse is used instead of QueryTrial
  *
  * TO-DO: Fill this out to match your implementation
  */
@@ -186,63 +187,66 @@ export class APIQuery {
   /**
    * A set of conditions.
    */
-  conditions: { code: string; system: string }[] = [];
+  conditions: Coding[] = [];
   // TO-DO Add any additional fields which need to be extracted from the bundle to construct query
 
   /**
   * Create a new query object.
   * @param patientBundle the patient bundle to use for field values
   */
-  constructor(patientBundle: fhir.Bundle) {
-    for (const entry of patientBundle.entry) {
-      if (!("resource" in entry)) {
-        // Skip bad entries
-        continue;
-      }
-      const resource = entry.resource;
-      // Pull out search parameters
-      if (resource.resourceType === "Parameters") {
-        for (const parameter of resource.parameter) {
-          if (parameter.name == "condition") {
-            this.condition = parameter.valueString;
-          }
-          if (parameter.name == "term") {
-            this.term = parameter.valueString;
-          }
-          if (parameter.name == "gender") {
-            this.gender = parameter.valueString;
-          }
-          if (parameter.name == "studyType") {
-            const val: string = studyTypeMap.get(parameter.valueString);
-            if (val) {
-              this.studyType = val;
-            } else {
-              throw new Http400Error("Invalid value of studyType. Permissible values are " + studyTypePermissibleString);
+  constructor(patientBundle: Bundle) {
+    const entries = patientBundle.entry;
+    if (entries) {
+      for (const entry of patientBundle.entry) {
+        if (!("resource" in entry)) {
+          // Skip bad entries
+          continue;
+        }
+        const resource = entry.resource;
+        // Pull out search parameters
+        if (resource.resourceType === "Parameters") {
+          for (const parameter of resource.parameter) {
+            if (parameter.name == "condition") {
+              this.condition = parameter.valueString;
             }
-          }
-          if (parameter.name == "phase") {
-            const val: string = phaseCodeMap.get(parameter.valueString);
-            if (val) {
-              this.phase = val;
-            } else {
-              throw new Http400Error("Invalid value of phase. Permissible values are " + phasePermissibleString);
+            if (parameter.name == "term") {
+              this.term = parameter.valueString;
             }
-          }
-          if (parameter.name == "recruitmentStatus") {
-            const val: string = recruitmentStatusMap.get(parameter.valueString);
-            if (val) {
-              this.recruitmentStatus = val;
-            } else {
-              throw new Http400Error("Invalid value of recruitmentStatus. Permissible values are " + recruitmentStatusPermissibleString);
+            if (parameter.name == "gender") {
+              this.gender = parameter.valueString;
+            }
+            if (parameter.name == "studyType") {
+              const val: string = studyTypeMap.get(parameter.valueString);
+              if (val) {
+                this.studyType = val;
+              } else {
+                throw new Http400Error("Invalid value of studyType. Permissible values are " + studyTypePermissibleString);
+              }
+            }
+            if (parameter.name == "phase") {
+              const val: string = phaseCodeMap.get(parameter.valueString);
+              if (val) {
+                this.phase = val;
+              } else {
+                throw new Http400Error("Invalid value of phase. Permissible values are " + phasePermissibleString);
+              }
+            }
+            if (parameter.name == "recruitmentStatus") {
+              const val: string = recruitmentStatusMap.get(parameter.valueString);
+              if (val) {
+                this.recruitmentStatus = val;
+              } else {
+                throw new Http400Error("Invalid value of recruitmentStatus. Permissible values are " + recruitmentStatusPermissibleString);
+              }
             }
           }
         }
+        // Gather all conditions the patient has
+        if (resource.resourceType === "Condition") {
+          this.addCondition(resource);
+        }
+        // TO-DO Extract any additional resources that you defined
       }
-      // Gather all conditions the patient has
-      if (resource.resourceType === "Condition") {
-        this.addCondition(resource);
-      }
-      // TO-DO Extract any additional resources that you defined
     }
   }
 
@@ -251,7 +255,7 @@ export class APIQuery {
    * implementation may pull out specific data.
    * @param condition the condition to add
    */
-  addCondition(condition: fhir.Condition): void {
+  addCondition(condition: Condition): void {
     for (const coding of condition.code.coding) {
       this.conditions.push(coding);
     }
@@ -391,7 +395,7 @@ function sendQuery(
             } catch (ex) {
               /**
                * Earlier APIError object was not serializing properly the returned reponse was
-               { 
+               {
                     "error": "Internal server error",
                     "exception": "[object Error]"
                }
