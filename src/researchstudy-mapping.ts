@@ -3,8 +3,8 @@
  * the underlying service to the FHIR ResearchStudy type.
  */
 
-import { fhir, ResearchStudy } from 'clinical-trial-matching-service';
-import { Address, Location } from 'clinical-trial-matching-service/dist/fhir-types';
+import { ResearchStudy } from 'clinical-trial-matching-service';
+import { Address, CodeableConcept, Location } from 'fhir/r4';
 import { getEmptyStringIfNull, phaseDisplayMap } from "./constants";
 import { LungevityResponse } from './lungevity-types';
 
@@ -47,7 +47,7 @@ export function convertToResearchStudy(lungResponse: LungevityResponse, id: numb
     if (lungResponse.arm_group) {
       result.arm = [];
       for (const a of lungResponse.arm_group) {
-        const codeable: fhir.CodeableConcept = {};
+        const codeable: CodeableConcept = {};
         codeable.text = getEmptyStringIfNull(a.arm_group_type);
         result.arm.push({ type: codeable, name: getEmptyStringIfNull(a.arm_group_label), description: getEmptyStringIfNull(a.description) });
       }
@@ -69,10 +69,9 @@ export function convertToResearchStudy(lungResponse: LungevityResponse, id: numb
       }
     }
     if (lungResponse.location && lungResponse.location[0] && lungResponse.location[0].facility) {
-      const location = lungResponse.location[0];  
+      const location = lungResponse.location[0];
       const facility = location.facility;
-      const s = <Location>{};
-      s.resourceType = "Location";
+      const s = <Location>{ resourceType: "Location" };
       s.id = 'loc' + result.id;
       s.name = getEmptyStringIfNull(facility.name);
       if (facility.address) {
@@ -96,7 +95,7 @@ export function convertToResearchStudy(lungResponse: LungevityResponse, id: numb
     return result;
   } catch (error) {
       // swallow the error to process next object
-      console.log(error);    
+      console.log(error);
   }
 }
 

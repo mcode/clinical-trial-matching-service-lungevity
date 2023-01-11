@@ -1,4 +1,5 @@
 import startServer from "../src/server";
+import { Server } from "http";
 import ClinicalTrialMatchingService from "clinical-trial-matching-service";
 
 describe("startServer()", () => {
@@ -8,7 +9,7 @@ describe("startServer()", () => {
     spyOn(ClinicalTrialMatchingService.prototype, "listen").and.callFake(() => {
       // Note: null return works here because the result of service is never
       // actually used in the "real" function
-      return null;
+      return Promise.resolve(null as unknown as Server);
     });
   });
 
