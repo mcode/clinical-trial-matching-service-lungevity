@@ -3,6 +3,10 @@ import { Server } from "http";
 import ClinicalTrialMatchingService from "clinical-trial-matching-service";
 
 describe("startServer()", () => {
+  beforeAll(() => {
+    // Set the CTGov backup service to use a memory DB, overriding the .env config
+    process.env.CTGOV_CACHE_FILE = ':memory:';
+  });
   beforeEach(() => {
     // Don't actually want to start the server listening, so spy on the
     // prototype to prevent that from happening
