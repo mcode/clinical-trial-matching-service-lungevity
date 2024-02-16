@@ -321,7 +321,7 @@ export class APIQuery {
  *     update the returned trials with additional information pulled from
  *     ClinicalTrials.gov
  */
-export function convertResponseToSearchSet(
+export async function convertResponseToSearchSet(
   response: QueryResponse,
   ctgService?: ClinicalTrialsGovService
 ): Promise<SearchSet> {
@@ -340,12 +340,9 @@ export function convertResponseToSearchSet(
   }
   if (ctgService) {
     // If given a backup service, use it
-    return ctgService.updateResearchStudies(studies).then(() => {
-      return new SearchSet(studies);
-    });
+    return new SearchSet(await ctgService.updateResearchStudies(studies));
   } else {
-    // Otherwise, resolve immediately
-    return Promise.resolve(new SearchSet(studies));
+    return new SearchSet(studies);
   }
 }
 
